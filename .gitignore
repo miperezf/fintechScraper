@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+scraper/node_modules/
+scraper/dist/
+scraper/.env
