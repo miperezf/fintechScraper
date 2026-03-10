@@ -1,0 +1,53 @@
+name: Currency Rate Scraper
+
+on:
+  # Ejecutar cada 10 minutos
+  schedule:
+    - cron: "*/10 * * * *"
+
+  # Permitir ejecución manual desde GitHub UI (útil para debugging)
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    name: Scrape & Store Rates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Si tarda más de 5 min, algo está mal
+
+    defaults:
+      run:
+        # Todos los comandos se ejecutan dentro de /scraper
+        working-directory: ./scraper
+
+    steps:
+      # --------------------------------------------------------
+      # PASO 1: Checkout del repositorio
+      # --------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------------
+      # PASO 2: Configurar Node.js
+      # --------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: scraper/package-lock.json
+
+      # --------------------------------------------------------
+      # PASO 3: Instalar dependencias
+      # --------------------------------------------------------
+      - name: Install dependencies
+        run: npm ci
+
+      # --------------------------------------------------------
+      # PASO 4: Ejecutar el scraper
+      # Las variables de entorno vienen de GitHub Secrets
+      # --------------------------------------------------------
+      - name: Run scraper
+        run: npm start
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
