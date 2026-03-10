@@ -1,55 +1,58 @@
 // ============================================================
-// TIPOS CENTRALES DEL SISTEMA
-// Estos tipos reflejan exactamente el modelo de la base de datos
+// TIPOS CENTRALES — Dominio: tasas de interés
 // ============================================================
 
 /**
- * Representa una fila de la tabla `sources`
+ * Representa una fila de la tabla `institutions`
  */
-export interface Source {
+export interface Institution {
   id: string;
   name: string;
   country: string;
-  base_url: string;
+  website: string;
+  type: "banco" | "fintech" | "cooperativa" | "caja_compensacion";
   is_active: boolean;
 }
 
 /**
- * Datos necesarios para insertar en `currency_rates`
- * No incluye `id` ni `timestamp` — los genera la BD automáticamente
+ * Representa una fila de la tabla `products`
  */
-export interface CurrencyRateInsert {
-  source_id: string;
-  currency_code: string;
-  buy_rate: number;
-  sell_rate: number;
+export interface Product {
+  id: string;
+  institution_id: string;
+  name: string;
+  product_type: "cuenta_remunerada" | "cuenta_ahorro" | "cuenta_vista" | "deposito_plazo";
+  currency: string;
+  is_active: boolean;
 }
 
 /**
  * Resultado normalizado que devuelve cualquier scraper.
- * Es independiente de la BD — el servicio se encarga de mapearlo.
+ * Independiente de la BD — el servicio hace el mapeo.
  */
 export interface ScrapedRate {
-  currencyCode: string;   // Ej: "USD", "EUR"
-  buyRate: number;        // Tasa de compra
-  sellRate: number;       // Tasa de venta
-  sourceName: string;     // Nombre de la institución
+  institutionName: string;  // Ej: "Mercado Pago"
+  productName: string;      // Ej: "Cuenta Remunerada"
+  rate: number;             // Ej: 13.5 (significa 13.5%)
 }
 
 /**
- * Contrato que TODOS los scrapers deben cumplir.
- * Cualquier scraper nuevo debe implementar esta interfaz.
+ * Datos para insertar en `interest_rates`
+ */
+export interface InterestRateInsert {
+  product_id: string;
+  rate: number;
+}
+
+/**
+ * Contrato que todos los scrapers deben cumplir
  */
 export interface IScraper {
-  /**
-   * Ejecuta el scraping y retorna las tasas encontradas.
-   * Nunca lanza excepciones — devuelve array vacío si falla.
-   */
   scrape(): Promise<ScrapedRate[]>;
 }
 
 /**
- * Resultado de una operación de inserción en la BD
+ * Resultado de una operación de inserción
  */
 export interface InsertResult {
   success: boolean;

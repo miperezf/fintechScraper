@@ -1,38 +1,48 @@
 import { getSupabaseClient } from "../db/supabase";
-import { ScrapedRate, CurrencyRateInsert, InsertResult, Source } from "../types";
+import { ScrapedRate, InterestRateInsert, InsertResult, Product } from "../types";
 
 // ============================================================
-// RATE SERVICE
-// Responsabilidad única: persistir y consultar tasas en Supabase
+// INTEREST RATE SERVICE
+// Responsabilidad: persistir tasas de interés en Supabase
 // ============================================================
 
 /**
- * Busca una fuente activa por nombre exacto.
- * Retorna null si no existe o está inactiva.
+ * Busca un producto activo por nombre de institución y nombre de producto.
  */
-export async function getSourceByName(name: string): Promise<Source | null> {
+async function getProduct(
+  institutionName: string,
+  productName: string
+): Promise<Product | null> {
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase
-    .from("sources")
-    .select("id, name, country, base_url, is_active")
-    .eq("name", name)
+    .from("products")
+    .select(`
+      id,
+      institution_id,
+      name,
+      product_type,
+      currency,
+      is_active,
+      institutions!inner ( name, is_active )
+    `)
+    .eq("name", productName)
     .eq("is_active", true)
+    .eq("institutions.name", institutionName)
+    .eq("institutions.is_active", true)
     .single();
 
   if (error) {
-    console.error(`[RateService] Error buscando source "${name}":`, error.message);
+    console.error(`[RateService] Producto no encontrado: "${institutionName} → ${productName}"`);
     return null;
   }
 
-  return data as Source;
+  return data as Product;
 }
 
 /**
- * Inserta múltiples tasas scrapeadas en currency_rates.
- * - Resuelve el source_id a partir del nombre de la fuente
- * - Normaliza de ScrapedRate a CurrencyRateInsert
- * - Retorna un resumen del resultado
+ * Inserta tasas scrapeadas en interest_rates.
+ * El trigger detectará cambios automáticamente.
  */
 export async function insertRates(rates: ScrapedRate[]): Promise<InsertResult> {
   const supabase = getSupabaseClient();
@@ -48,47 +58,34 @@ export async function insertRates(rates: ScrapedRate[]): Promise<InsertResult> {
   }
 
   // --------------------------------------------------------
-  // PASO 1: Resolver source_id para cada nombre único de fuente
-  // Usamos un Map para evitar consultas duplicadas si hay
-  // múltiples monedas del mismo banco
+  // Resolver product_id para cada tasa scrapeada
   // --------------------------------------------------------
-  const sourceCache = new Map<string, string>(); // name → id
+  const toInsert: InterestRateInsert[] = [];
 
   for (const rate of rates) {
-    if (!sourceCache.has(rate.sourceName)) {
-      const source = await getSourceByName(rate.sourceName);
-      if (!source) {
-        result.errors.push(`Fuente no encontrada o inactiva: "${rate.sourceName}"`);
-        continue;
-      }
-      sourceCache.set(rate.sourceName, source.id);
+    const product = await getProduct(rate.institutionName, rate.productName);
+
+    if (!product) {
+      result.errors.push(`Producto no encontrado: "${rate.institutionName} → ${rate.productName}"`);
+      continue;
     }
+
+    toInsert.push({
+      product_id: product.id,
+      rate: rate.rate,
+    });
   }
 
-  if (sourceCache.size === 0) {
-    result.errors.push("No se pudo resolver ninguna fuente válida");
+  if (toInsert.length === 0) {
+    result.errors.push("No se pudo resolver ningún producto válido");
     return result;
   }
 
   // --------------------------------------------------------
-  // PASO 2: Mapear ScrapedRate[] → CurrencyRateInsert[]
-  // Solo incluimos tasas cuya fuente fue resuelta correctamente
-  // --------------------------------------------------------
-  const toInsert: CurrencyRateInsert[] = rates
-    .filter((rate) => sourceCache.has(rate.sourceName))
-    .map((rate) => ({
-      source_id:     sourceCache.get(rate.sourceName)!,
-      currency_code: rate.currencyCode.toUpperCase(),
-      buy_rate:      rate.buyRate,
-      sell_rate:     rate.sellRate,
-    }));
-
-  // --------------------------------------------------------
-  // PASO 3: Insertar en Supabase
-  // El trigger de la BD detectará automáticamente los cambios
+  // Insertar en Supabase — el trigger hace el resto
   // --------------------------------------------------------
   const { error } = await supabase
-    .from("currency_rates")
+    .from("interest_rates")
     .insert(toInsert);
 
   if (error) {
